@@ -1,0 +1,116 @@
+---
+title: "Interstate Conflicts"
+author: "Yun-Tsz Tsai, Alex"
+format: pdf
+editor: visual
+---
+
+```{r}
+#| echo: false
+#| message: false
+#| warning: false
+library(sna)
+library(glue)
+library(tidyr)
+library(dplyr)
+library(igraph)
+library(tidyverse)
+```
+
+```{r}
+#| echo: false
+#| message: false
+#| warning: false
+df <- read.csv('./data/MIDB 5.0.csv')
+cat(min(df$styear), max(df$styear))
+# remove rows before second world war
+df <- df %>%
+  filter(styear >= 1945 & styear <= 1991)
+# columns needed to be kept
+keeps <- c('dispnum', 'stabb', 'sidea')
+df_cleaned <- df %>%
+              select(all_of(keeps))
+```
+
+```{r}
+#| echo: false
+#| message: false
+#| warning: false
+# remove conflicts where only 2 states were involved
+df_cleaned <- df_cleaned %>% 
+              group_by(dispnum) %>% 
+              filter(n() > 2) %>% 
+              ungroup()
+# remove states who had no alliance in a conflict
+df_cleaned <- df_cleaned %>% 
+              group_by(dispnum, sidea) %>% 
+              filter(n() > 1) %>% 
+              ungroup()
+
+# initialize a matrix to store the data
+alliance_pair <- matrix(ncol = 2)
+
+# split states that were in the same conflict but on different side
+for (num in unique(df_cleaned$dispnum)){
+  # select all countries in the same conflicts
+  df_sub <- df_cleaned[df_cleaned$dispnum == num, ]
+  side_a <-  c(df_sub$stabb[df_sub$sidea == 1])
+  side_b <-  c(df_sub$stabb[df_sub$sidea == 0])
+  if (length(side_a) > 0){
+    results <- t(combn(side_a, 2))
+    alliance_pair <- rbind(alliance_pair, results)
+  }
+  if (length(side_b) > 0){
+    results <- t(combn(side_b, 2))
+    alliance_pair <- rbind(alliance_pair, results)
+  }
+  }
+# remove NA from the matrix
+alliance_pair <- alliance_pair[rowSums(is.na(alliance_pair)) == 0, ]
+```
+
+```{r}
+#| echo: false
+#| message: false
+#| warning: false
+alliance_pair <- as.matrix(alliance_pair)
+dim(alliance_pair)
+# visdualization 
+G_alliance <- graph_from_edgelist(alliance_pair)
+plot.igraph(G_alliance,
+            vertex.label = '', vertex.size = 4,
+            edge.color='darkgrey',edge.arrow.size=.1,
+            layout=layout_with_kk(G_alliance), 
+            main='Collaboration among States during Disputes')
+ecount(G_alliance) # number of edges
+```
+
+```{r}
+#| echo: false
+#| message: false
+#| warning: false
+# ego network of France
+plot(make_ego_graph(G_alliance, order = 1,  nodes = "FRN",  mode = c("all"),  mindist = 0)[[1]], edge.arrow.size=.1)
+```
+
+```{r}
+#| echo: false
+#| message: false
+#| warning: false
+scc <- igraph::components(G_alliance, mode = 'strong')
+
+data <- as.data.frame(alliance_pair)
+
+(data$V1[data$V2 == 'USA']) == 'USA'
+```
+
+```{r}
+# adjacency matrix
+df_alliance <- graph_data_frame(alliance_pair)
+adj_mtx <- as_adjacency_matrix(G_alliance, sparse = FALSE) # the values do not seem correct
+w_alliance <- graph_from_adjacency_matrix(adj_mtx, weighted = TRUE)
+plot.igraph(w_alliance, 
+            vertex.label = '', vertex.size = 4,
+            edge.color='darkgrey',edge.arrow.size=.1,
+            layout=layout_with_kk(G_alliance))
+```

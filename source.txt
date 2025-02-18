@@ -1,0 +1,3 @@
+The data being used in this assignment comes from the following source:
+Palmer, Glenn, Roseanne W. McManus, Vito D’Orazio, Michael R. Kenwick, Mikaela Karstens, Chase Bloch, Nick Dietrich, Kayla Kahn, Kellan Ritter, Michael J. Soules. 2020. “The MID5 Dataset, 2011-2014: Procedures, Coding Rules, and Description.” Conflict Management and Peace Science, 39(4): 470-482. 
+DOI: https://journals.sagepub.com/doi/full/10.1177/0738894221995743
