@@ -1,9 +1,14 @@
 ---
 title: "Interstate Conflicts"
-author: "Yun-Tsz Tsai, Alex"
+author: "Yun-Tsz Tsai, Alexander Sjöberg"
 format: pdf
 editor: visual
 ---
+# Introduction
+The data being used in this analysis is from Palmer, Glenn, Roseanne W. McManus, Vito D’Orazio, Michael R. Kenwick, Mikaela Karstens, Chase Bloch, Nick Dietrich, Kayla Kahn, Kellan Ritter, Michael J. Soules. 2020. “The MID5 Dataset, 2011-2014: Procedures, Coding Rules, and Description.” Conflict Management and Peace Science, 39(4): 470-482. 
+DOI: <https://journals.sagepub.com/doi/full/10.1177/0738894221995743>.
+The data covers information on interstate conflicts and the year of conflicts range from 1816 to 2014. We are interested in the dynamics of the countries involved in these conflicts and assume that there might be some hidden patterns in terms of the collaboration among countries. Specifically, we wonder if counties picked sides in accordance with their political ideology during the cold war. We hereby focus on the data between 1945 to 1991, when the Soviet Union collapsed. 
+The hypothesis is, we expect to see countries that belonged to the same bloc have more connection with one another and little or no connection with countries that were in the opposite bloc.  Besides, superpowers such as the US and Russia are likely to have higher betweenness centrality as they disagree with each other often and get involved in the disputes of their alliance (i.e. The dispute might not be directly related to them but they still participate in it). We also expect geographic clustering, that clusters will emerge where countries are from the same region of the world, as neighbours band together in a dispute.
 
 ```{r}
 #| echo: false
@@ -11,10 +16,14 @@ editor: visual
 #| warning: false
 library(sna)
 library(glue)
+library(tibble)
 library(tidyr)
 library(dplyr)
 library(igraph)
+library(qgraph)
+library(ggplot2)
 library(tidyverse)
+library(gt)
 ```
 
 ```{r}
@@ -22,7 +31,6 @@ library(tidyverse)
 #| message: false
 #| warning: false
 df <- read.csv('./data/MIDB 5.0.csv')
-cat(min(df$styear), max(df$styear))
 # remove rows before second world war
 df <- df %>%
   filter(styear >= 1945 & styear <= 1991)
@@ -56,11 +64,11 @@ for (num in unique(df_cleaned$dispnum)){
   df_sub <- df_cleaned[df_cleaned$dispnum == num, ]
   side_a <-  c(df_sub$stabb[df_sub$sidea == 1])
   side_b <-  c(df_sub$stabb[df_sub$sidea == 0])
-  if (length(side_a) > 0){
+  if (length(side_a) >= 2){
     results <- t(combn(side_a, 2))
     alliance_pair <- rbind(alliance_pair, results)
   }
-  if (length(side_b) > 0){
+  if (length(side_b) >= 2){
     results <- t(combn(side_b, 2))
     alliance_pair <- rbind(alliance_pair, results)
   }
@@ -70,19 +78,25 @@ alliance_pair <- alliance_pair[rowSums(is.na(alliance_pair)) == 0, ]
 ```
 
 ```{r}
+#| fig.align: center
 #| echo: false
 #| message: false
 #| warning: false
-alliance_pair <- as.matrix(alliance_pair)
-dim(alliance_pair)
-# visdualization 
 G_alliance <- graph_from_edgelist(alliance_pair)
-plot.igraph(G_alliance,
-            vertex.label = '', vertex.size = 4,
-            edge.color='darkgrey',edge.arrow.size=.1,
-            layout=layout_with_kk(G_alliance), 
-            main='Collaboration among States during Disputes')
-ecount(G_alliance) # number of edges
+mtx_alliance <- as.matrix(alliance_pair)
+undG_alliance <- as.undirected(G_alliance, mode = 'collapse') # to undirected
+
+# visualization using qgraph
+qgraph(mtx_alliance)
+
+# visdualization using igraph
+# make the graph undirected (need to be revised) 
+
+# ntw <- plot.igraph(undG_alliance,
+#             vertex.label = '', vertex.size = 4,
+#             edge.color='darkgrey',edge.arrow.size=.1,
+#             layout=layout_with_kk(G_alliance), 
+#             main='Collaboration among States during Disputes (undirected)')
 ```
 
 ```{r}
@@ -90,27 +104,138 @@ ecount(G_alliance) # number of edges
 #| message: false
 #| warning: false
 # ego network of France
-plot(make_ego_graph(G_alliance, order = 1,  nodes = "FRN",  mode = c("all"),  mindist = 0)[[1]], edge.arrow.size=.1)
+# plot(make_ego_graph(G_alliance, order = 1,  nodes = "FRN",  mode = c("all"),  mindist = 0)[[1]], edge.arrow.size=.1)
+```
+
+## Descriptive Data 
+First, we start our analysis with looking at node-level statistics. There are 103 nodes (aka countries in this study) and undirected 624 edges in the network, and the period being examined is from 1945 to 1991. The average degree, which represents the number of edges attached to a node, is approximately 12  with a standard deviation of ~13. In other words, each country is at least once in the same bloc with 12 other countries. However, a relatively high standard deviation also implies that the number of alliances of a country varies greatly. This can be shown by looking at betweenness centrality, which is an indicator of a role as a broker in the network. Nodes that have high betweenness centrality do not necessarily have plenty of edges attached to them but they play a vital role in bridging other nodes in the network. During 1945 to 1991, the top five countries that have highest betweenness centrality, are the US, USSR, the UK, Cuba and Ethiopia. Thus, these were the countries that were involved in conflicts more often, both directly and indirectly. 
+Network statstics are presented in *Table 3*. When analyzing a network, there are several measurments one can possibly examine to better understand the network structure. Density refers to how closely the network is connected. In this netwrok, the density is reltively low given the size of the network. Reciprocity is not applicable in our network as it is an undirected network. However, the transitivity in this network is rather high, indicating that there is a strong tendency for the state to also form a positive relationship with the alliance of their existing alliances.
+
+```{r}
+#| fig.align: center
+#| fig-width: 4
+#| fig-height: 3
+#| layout: [[45, -5, 45]]
+#| echo: false
+#| message: false
+#| warning: false
+# centrality stat of graphs
+sta_stat <- centrality(undG_alliance, alpha = 1)
+# node level attributes
+n_nodes <- vcount(undG_alliance)
+n_edges <- ecount(undG_alliance)
+
+avg_degree <- as.character(glue(
+  '{round(mean(sta_stat$InDegree), 2)}±{round(sd(sta_stat$InDegree), 2)}'))
+# avg_degree <- mean(sta_stat$InDegree)
+rng <- as.character(
+  glue('{round(range(sta_stat$Betweenness), 2)[1]}~ {round(range(sta_stat$Betweenness), 2)[2]}'))
+
+tbl_descip <- tibble(
+  'term' = c('Node counts','Edge counts','Average degree', 'Betweenness'),
+  'value' = as.character(c(n_nodes, n_edges, avg_degree, rng)))
+tbl_descip <- as.data.frame(tbl_descip)
+
+ ##########
+# table 1 #
+##########
+gt(tbl_descip,
+   rowname_col = 'term') %>% 
+  tab_header(title = md('**Table 1: Node-level Statistics**'),) %>% 
+  tab_options(source_notes.font.size = '10px') %>% 
+  tab_source_note(md('*Source: Palmer, Glenn, Roseanne W. McManus,Vito D’Orazio, Michael R. Kenwick, Mikaela Karstens, Chase Bloch, Nick Dietrich, Kayla Kahn, Kellan Ritter, Michael J. Soules. 2020.*')) %>% 
+  cols_align(
+    align = 'center',
+    columns = 'value'
+  ) %>% 
+  cols_width(
+    term ~ px(200),
+    everything() ~ px(100)
+  )
+
+ ##########
+# table 2 #
+##########
+# top 5 states by btw c
+top5 <- names(sort(sta_stat$Betweenness, decreasing = TRUE)[1:5])
+# fetch the corresponding values for degree c
+deg_c <- sta_stat$OutDegree[names(sta_stat$OutDegree) %in% top5]
+tbl_sta <- tibble(
+  'state' = top5,
+  'Between C' = sort(sta_stat$Betweenness, decreasing = TRUE)[1: 5],
+  'Degree C' = deg_c
+)
+gt(tbl_sta,
+rowname_col = 'state') %>% 
+fmt_number(decimals = 1) %>% 
+tab_header(md('**Table 2: Top 5 Countries by Betweenness Centrality**')) %>% 
+tab_source_note(md('*Source: Palmer, Glenn, Roseanne W. McManus,Vito D’Orazio, Michael R. Kenwick, Mikaela Karstens, Chase Bloch, Nick Dietrich, Kayla Kahn, Kellan Ritter, Michael J. Soules. 2020.*')) %>% 
+tab_options(heading.align = 'center',
+source_notes.font.size = 'small') %>% 
+  cols_align(
+    align = 'center',
+    columns = c('Degree C', 'Between C')
+  ) %>% 
+  cols_width(
+    state ~ px(100),
+    everything() ~ px(100)
+  )
+
+# network level attributes
+d <- round(igraph::edge_density(undG_alliance),2) # density
+# transitivity
+t <- round(igraph::transitivity(undG_alliance, type = 'undirected'), 2)  
+# shortest path between node i and node j 
+pair_shortest_path <- as.vector(sta_stat$ShortestPathLengths[
+  sta_stat$ShortestPathLengths > 0])
+
+ ############
+# histogram 1 #
+ ###########
+ggplot(data.frame(pair_shortest_path), aes(x = pair_shortest_path)) +
+        geom_histogram(binwidth = 0.5, fill = 'cadetblue1') +
+        labs(title = 'Distribution of Shortest path',
+             subtitle = 'Data from 1945 to 1991',
+             tag = 'Figure 1',
+              x = 'Path Lengths',
+              y = 'Count',
+              caption = 'Figures caculated by the authors') +
+        theme_light()
+
+ #################################
+# table 3 network level attribute # 
+#################################
+
+tbl_ntw <- tibble('term' = c('Density', 'Reciprocity','Transitivity'),
+                  'value' = c(d, NA, t))
+gt(tbl_ntw, rowname_col = 'term') %>% 
+  tab_header(md('**Table 3: Network Statistics**')) %>% 
+tab_source_note(md('*Source: Palmer, Glenn, Roseanne W. McManus,Vito D’Orazio, Michael R. Kenwick, Mikaela Karstens, Chase Bloch, Nick Dietrich, Kayla Kahn, Kellan Ritter, Michael J. Soules. 2020.*')) %>% 
+tab_options(heading.align = 'center',
+source_notes.font.size = 'small') %>% 
+  cols_align(
+    align = 'center',
+    columns = c('value')
+  ) %>% 
+  cols_width(
+    term ~ px(100),
+    everything() ~ px(100)
+  )
+
 ```
 
 ```{r}
 #| echo: false
 #| message: false
 #| warning: false
-scc <- igraph::components(G_alliance, mode = 'strong')
 
-data <- as.data.frame(alliance_pair)
-
-(data$V1[data$V2 == 'USA']) == 'USA'
 ```
 
+
+
 ```{r}
-# adjacency matrix
-df_alliance <- graph_data_frame(alliance_pair)
-adj_mtx <- as_adjacency_matrix(G_alliance, sparse = FALSE) # the values do not seem correct
-w_alliance <- graph_from_adjacency_matrix(adj_mtx, weighted = TRUE)
-plot.igraph(w_alliance, 
-            vertex.label = '', vertex.size = 4,
-            edge.color='darkgrey',edge.arrow.size=.1,
-            layout=layout_with_kk(G_alliance))
+#| echo: false
+#| message: false
+#| warning: false
+
 ```
