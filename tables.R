@@ -1,10 +1,54 @@
-#| fig.align: center
-#| fig-width: 4
-#| fig-height: 3
-#| layout: [[45, -5, 45]]
-#| echo: false
-#| message: false
-#| warning: false
+library(gt)
+library(tidyverse)
+library(tibble)
+library(igraph)
+library(glue)
+# load the data
+df <- read.csv('./data/MIDB 5.0.csv')
+# remove rows before second world war
+df <- df %>%
+  filter(styear >= 1945 & styear <= 1991)
+
+# columns needed to be kept
+keeps <- c('dispnum', 'stabb', 'sidea')
+df_cleaned <- df %>%
+  select(all_of(keeps))
+# remove conflicts where only 2 states were involved
+df_cleaned <- df_cleaned %>% 
+  group_by(dispnum) %>% 
+  filter(n() > 2) %>% 
+  ungroup()
+# remove states who had no alliance in a conflict
+df_cleaned <- df_cleaned %>% 
+  group_by(dispnum, sidea) %>% 
+  filter(n() > 1) %>% 
+  ungroup()
+
+# initialize a matrix to store the data
+alliance_pair <- matrix(ncol = 2)
+
+# split states that were in the same conflict but on different side
+for (num in unique(df_cleaned$dispnum)){
+  # select all countries in the same conflicts
+  df_sub <- df_cleaned[df_cleaned$dispnum == num, ]
+  side_a <-  c(df_sub$stabb[df_sub$sidea == 1])
+  side_b <-  c(df_sub$stabb[df_sub$sidea == 0])
+  if (length(side_a) >= 2){
+    results <- t(combn(side_a, 2))
+    alliance_pair <- rbind(alliance_pair, results)
+  }
+  if (length(side_b) >= 2){
+    results <- t(combn(side_b, 2))
+    alliance_pair <- rbind(alliance_pair, results)
+  }
+}
+# remove NA from the matrix
+alliance_pair <- alliance_pair[rowSums(is.na(alliance_pair)) == 0, ]
+# data handling and generate igraph object
+G_alliance <- graph_from_edgelist(alliance_pair)
+mtx_alliance <- as.matrix(alliance_pair)
+undG_alliance <- as.undirected(G_alliance, mode = 'collapse')
+
 # centrality stat of graphs
 sta_stat <- centrality(undG_alliance, alpha = 1)
 # node level attributes
@@ -21,6 +65,7 @@ tbl_descip <- tibble(
   'term' = c('Node counts','Edge counts','Average degree', 'Betweenness'),
   'value' = as.character(c(n_nodes, n_edges, avg_degree, rng)))
 
+#-------------------------------Visualization------------------------------
 ##########
 # table 1 #
 ##########
@@ -106,3 +151,15 @@ gt(tbl_ntw, rowname_col = 'term') %>%
     term ~ px(100),
     everything() ~ px(100)
   )
+############
+# histogram 1 #
+###########
+ggplot(data.frame(pair_shortest_path), aes(x = pair_shortest_path)) +
+  geom_histogram(binwidth = 0.5, fill = 'cadetblue1') +
+  labs(title = 'Distribution of Shortest path',
+       subtitle = 'Data from 1945 to 1991',
+       tag = 'Figure 1',
+       x = 'Path Lengths',
+       y = 'Count',
+       caption = 'Figures caculated by the authors') +
+  theme_light()
